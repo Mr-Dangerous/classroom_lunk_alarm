@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Classroom Lunk Alarm</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Arial', sans-serif;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            transition: background-color 0.3s ease;
+            overflow: hidden;
+        }
+
+        body.flash-yellow {
+            background-color: #FFD700 !important;
+            background: #FFD700 !important;
+        }
+
+        body.flash-red {
+            background-color: #FF0000 !important;
+            background: #FF0000 !important;
+        }
+
+        .container {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .status {
+            font-size: 72px;
+            font-weight: bold;
+            margin-bottom: 30px;
+            text-align: center;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .volume-display {
+            font-size: 48px;
+            margin-bottom: 20px;
+            font-family: 'Courier New', monospace;
+        }
+
+        .volume-bar-container {
+            width: 80%;
+            max-width: 600px;
+            height: 60px;
+            background: rgba(255,255,255,0.2);
+            border-radius: 30px;
+            overflow: hidden;
+            margin-bottom: 40px;
+            border: 3px solid rgba(255,255,255,0.5);
+        }
+
+        .volume-bar {
+            height: 100%;
+            background: linear-gradient(90deg, #00FF00 0%, #FFD700 50%, #FF0000 100%);
+            width: 0%;
+            transition: width 0.1s ease;
+        }
+
+        .controls {
+            background: rgba(255,255,255,0.1);
+            padding: 30px;
+            border-radius: 20px;
+            backdrop-filter: blur(10px);
+            min-width: 400px;
+        }
+
+        .control-group {
+            margin-bottom: 25px;
+        }
+
+        label {
+            display: block;
+            font-size: 20px;
+            margin-bottom: 10px;
+            font-weight: bold;
+        }
+
+        input[type="range"] {
+            width: 100%;
+            height: 40px;
+            cursor: pointer;
+        }
+
+        .threshold-value {
+            font-size: 32px;
+            font-weight: bold;
+            text-align: center;
+            margin-top: 10px;
+        }
+
+        button {
+            width: 100%;
+            padding: 20px;
+            font-size: 24px;
+            font-weight: bold;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin-bottom: 15px;
+        }
+
+        .start-btn {
+            background: #00FF00;
+            color: #000;
+        }
+
+        .start-btn:hover {
+            background: #00DD00;
+            transform: scale(1.02);
+        }
+
+        .start-btn:disabled {
+            background: #666;
+            color: #999;
+            cursor: not-allowed;
+        }
+
+        .reset-btn {
+            background: #FF6B6B;
+            color: white;
+        }
+
+        .reset-btn:hover {
+            background: #FF5252;
+            transform: scale(1.02);
+        }
+
+        .warning-count {
+            font-size: 28px;
+            text-align: center;
+            margin-top: 20px;
+            padding: 15px;
+            background: rgba(0,0,0,0.2);
+            border-radius: 10px;
+        }
+
+        .warning-emoji {
+            font-size: 64px;
+            margin-bottom: 20px;
+        }
+
+        .instructions {
+            text-align: center;
+            font-size: 18px;
+            margin-top: 20px;
+            opacity: 0.8;
+        }
+
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+        }
+
+        .pulse {
+            animation: pulse 0.5s ease-in-out;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="warning-emoji" id="emoji">🤫</div>
+        <div class="status" id="status">Classroom Lunk Alarm</div>
+        <div class="volume-display" id="volumeDisplay">-- dB</div>
+        <div class="volume-bar-container">
+            <div class="volume-bar" id="volumeBar"></div>
+        </div>
+
+        <div class="controls">
+            <div class="control-group">
+                <label for="threshold">Noise Threshold (dB)</label>
+                <input type="range" id="threshold" min="40" max="90" value="65" step="1">
+                <div class="threshold-value" id="thresholdValue">65 dB</div>
+            </div>
+
+            <button class="start-btn" id="startBtn">START MONITORING</button>
+            <button class="reset-btn" id="resetBtn">RESET WARNINGS</button>
+
+            <div class="warning-count" id="warningCount">Warnings: 0</div>
+
+            <div class="instructions">
+                Click START to begin monitoring classroom noise.<br>
+                Adjust threshold based on your classroom needs.
+            </div>
+        </div>
+    </div>
+
+    <audio id="klaxon" preload="auto">
+        <source src="klaxon.mp3" type="audio/mpeg">
+        <source src="klaxon.ogg" type="audio/ogg">
+    </audio>
+
+    <script>
+        let audioContext;
+        let analyser;
+        let microphone;
+        let dataArray;
+        let rafId;
+        let warningCount = 0;
+        let isMonitoring = false;
+        let threshold = 65;
+        let lastViolationTime = 0;
+        let smoothedVolume = 0;
+        const VIOLATION_COOLDOWN = 3000; // 3 seconds cooldown between violations
+        const SMOOTHING_FACTOR = 0.8; // For smoothing volume readings
+
+        const startBtn = document.getElementById('startBtn');
+        const resetBtn = document.getElementById('resetBtn');
+        const thresholdSlider = document.getElementById('threshold');
+        const thresholdValue = document.getElementById('thresholdValue');
+        const volumeDisplay = document.getElementById('volumeDisplay');
+        const volumeBar = document.getElementById('volumeBar');
+        const status = document.getElementById('status');
+        const warningCountDisplay = document.getElementById('warningCount');
+        const emoji = document.getElementById('emoji');
+        const klaxonSound = document.getElementById('klaxon');
+
+        // Load saved threshold from localStorage
+        const savedThreshold = localStorage.getItem('lunkAlarmThreshold');
+        if (savedThreshold) {
+            threshold = parseInt(savedThreshold);
+            thresholdSlider.value = threshold;
+            thresholdValue.textContent = threshold + ' dB';
+        }
+
+        // Threshold slider handler
+        thresholdSlider.addEventListener('input', (e) => {
+            threshold = parseInt(e.target.value);
+            thresholdValue.textContent = threshold + ' dB';
+            localStorage.setItem('lunkAlarmThreshold', threshold);
+        });
+
+        // Start button handler
+        startBtn.addEventListener('click', async () => {
+            if (!isMonitoring) {
+                await startMonitoring();
+            } else {
+                stopMonitoring();
+            }
+        });
+
+        // Reset button handler
+        resetBtn.addEventListener('click', () => {
+            warningCount = 0;
+            updateWarningDisplay();
+            status.textContent = isMonitoring ? 'Monitoring...' : 'Classroom Lunk Alarm';
+            emoji.textContent = '🤫';
+            document.body.classList.remove('flash-yellow', 'flash-red');
+        });
+
+        async function startMonitoring() {
+            try {
+                // Request microphone access
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+                // Create audio context
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                analyser = audioContext.createAnalyser();
+                microphone = audioContext.createMediaStreamSource(stream);
+
+                analyser.fftSize = 2048;
+                analyser.smoothingTimeConstant = 0.8;
+                const bufferLength = analyser.fftSize;
+                dataArray = new Uint8Array(bufferLength);
+
+                microphone.connect(analyser);
+
+                isMonitoring = true;
+                startBtn.textContent = 'STOP MONITORING';
+                startBtn.style.background = '#FF6B6B';
+                status.textContent = 'Monitoring...';
+                emoji.textContent = '👂';
+
+                // Start monitoring loop
+                monitorVolume();
+            } catch (error) {
+                alert('Error accessing microphone: ' + error.message);
+                console.error('Microphone error:', error);
+            }
+        }
+
+        function stopMonitoring() {
+            if (rafId) {
+                cancelAnimationFrame(rafId);
+            }
+
+            if (microphone) {
+                microphone.disconnect();
+            }
+
+            if (audioContext) {
+                audioContext.close();
+            }
+
+            isMonitoring = false;
+            smoothedVolume = 0;
+            startBtn.textContent = 'START MONITORING';
+            startBtn.style.background = '#00FF00';
+            status.textContent = 'Monitoring Stopped';
+            volumeDisplay.textContent = '-- dB';
+            volumeBar.style.width = '0%';
+            emoji.textContent = '🤫';
+        }
+
+        function monitorVolume() {
+            // Get time domain data (actual amplitude values)
+            analyser.getByteTimeDomainData(dataArray);
+
+            // Calculate RMS (Root Mean Square) for accurate volume measurement
+            let sumSquares = 0;
+            for (let i = 0; i < dataArray.length; i++) {
+                // Convert from 0-255 range to -1 to 1 range
+                const normalized = (dataArray[i] - 128) / 128;
+                sumSquares += normalized * normalized;
+            }
+            const rms = Math.sqrt(sumSquares / dataArray.length);
+
+            // Convert RMS to decibels
+            // Reference level: 0.1 gives us a good range for typical microphone input
+            const db = 20 * Math.log10(rms / 0.1);
+
+            // Clamp to reasonable range and add offset to match typical dB SPL scale
+            // Quiet room: ~30-40 dB, Normal speech: ~60-65 dB, Loud classroom: 70-80 dB
+            const calibratedDb = Math.max(0, Math.min(100, db + 60));
+
+            // Apply smoothing to reduce jitter
+            smoothedVolume = (SMOOTHING_FACTOR * smoothedVolume) + ((1 - SMOOTHING_FACTOR) * calibratedDb);
+            const displayDb = Math.round(smoothedVolume);
+
+            // Update display
+            volumeDisplay.textContent = displayDb + ' dB';
+            volumeBar.style.width = Math.min(displayDb, 100) + '%';
+
+            // Check for threshold violation
+            const now = Date.now();
+            if (displayDb > threshold && (now - lastViolationTime) > VIOLATION_COOLDOWN) {
+                lastViolationTime = now;
+                warningCount++;
+                updateWarningDisplay();
+                triggerAlarm();
+            }
+
+            rafId = requestAnimationFrame(monitorVolume);
+        }
+
+        function triggerAlarm() {
+            if (warningCount === 1) {
+                // First violation: Yellow flash
+                flashWarning('yellow');
+                status.textContent = 'WARNING: Too Loud!';
+                emoji.textContent = '⚠️';
+            } else {
+                // Second+ violation: Red flash and klaxon
+                flashWarning('red');
+                status.textContent = 'LUNK ALARM!!!';
+                emoji.textContent = '🚨';
+                playKlaxon();
+            }
+
+            // Pulse animation
+            emoji.classList.add('pulse');
+            setTimeout(() => emoji.classList.remove('pulse'), 500);
+        }
+
+        function flashWarning(color) {
+            const className = color === 'yellow' ? 'flash-yellow' : 'flash-red';
+            document.body.classList.add(className);
+
+            // Flash multiple times
+            let flashCount = 0;
+            const flashInterval = setInterval(() => {
+                flashCount++;
+                document.body.classList.toggle(className);
+
+                if (flashCount >= 6) {
+                    clearInterval(flashInterval);
+                    document.body.classList.remove(className);
+                }
+            }, 300);
+        }
+
+        function playKlaxon() {
+            klaxonSound.currentTime = 0;
+            klaxonSound.play().catch(err => {
+                console.log('Klaxon sound not available:', err);
+            });
+        }
+
+        function updateWarningDisplay() {
+            warningCountDisplay.textContent = `Warnings: ${warningCount}`;
+
+            if (warningCount === 0) {
+                warningCountDisplay.style.background = 'rgba(0,0,0,0.2)';
+            } else if (warningCount === 1) {
+                warningCountDisplay.style.background = 'rgba(255,215,0,0.3)';
+            } else {
+                warningCountDisplay.style.background = 'rgba(255,0,0,0.3)';
+            }
+        }
+    </script>
+</body>
+</html>
