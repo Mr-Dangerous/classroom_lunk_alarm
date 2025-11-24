@@ -78,7 +78,8 @@
             padding: 30px;
             border-radius: 20px;
             backdrop-filter: blur(10px);
-            min-width: 400px;
+            min-width: 300px;
+            max-width: 90%;
         }
 
         .control-group {
@@ -172,6 +173,154 @@
         .pulse {
             animation: pulse 0.5s ease-in-out;
         }
+
+        .mute-control {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 20px;
+            padding: 15px;
+            background: rgba(0,0,0,0.2);
+            border-radius: 10px;
+        }
+
+        .mute-label {
+            font-size: 20px;
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .toggle-switch {
+            position: relative;
+            width: 60px;
+            height: 30px;
+        }
+
+        .toggle-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #00FF00;
+            transition: 0.3s;
+            border-radius: 30px;
+        }
+
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 22px;
+            width: 22px;
+            left: 4px;
+            bottom: 4px;
+            background-color: white;
+            transition: 0.3s;
+            border-radius: 50%;
+        }
+
+        input:checked + .slider {
+            background-color: #FF6B6B;
+        }
+
+        input:checked + .slider:before {
+            transform: translateX(30px);
+        }
+
+        @media (max-height: 800px) {
+            .status {
+                font-size: 48px;
+                margin-bottom: 20px;
+            }
+
+            .volume-display {
+                font-size: 36px;
+                margin-bottom: 15px;
+            }
+
+            .volume-bar-container {
+                height: 40px;
+                margin-bottom: 30px;
+            }
+
+            .controls {
+                padding: 20px;
+            }
+
+            .warning-emoji {
+                font-size: 48px;
+                margin-bottom: 15px;
+            }
+
+            button {
+                padding: 15px;
+                font-size: 20px;
+            }
+        }
+
+        @media (max-height: 600px) {
+            .status {
+                font-size: 36px;
+                margin-bottom: 10px;
+            }
+
+            .volume-display {
+                font-size: 28px;
+                margin-bottom: 10px;
+            }
+
+            .volume-bar-container {
+                height: 30px;
+                margin-bottom: 20px;
+            }
+
+            .warning-emoji {
+                font-size: 36px;
+                margin-bottom: 10px;
+            }
+
+            .controls {
+                padding: 15px;
+            }
+
+            .control-group {
+                margin-bottom: 15px;
+            }
+
+            label {
+                font-size: 16px;
+            }
+
+            .threshold-value {
+                font-size: 24px;
+            }
+
+            button {
+                padding: 12px;
+                font-size: 18px;
+                margin-bottom: 10px;
+            }
+
+            .warning-count {
+                font-size: 20px;
+                padding: 10px;
+                margin-top: 10px;
+            }
+
+            .instructions {
+                font-size: 14px;
+                margin-top: 10px;
+            }
+        }
     </style>
 </head>
 <body>
@@ -184,6 +333,17 @@
         </div>
 
         <div class="controls">
+            <div class="mute-control">
+                <div class="mute-label">
+                    <span id="muteIcon">🔊</span>
+                    <span>Sound</span>
+                </div>
+                <label class="toggle-switch">
+                    <input type="checkbox" id="muteToggle">
+                    <span class="slider"></span>
+                </label>
+            </div>
+
             <div class="control-group">
                 <label for="threshold">Noise Threshold (dB)</label>
                 <input type="range" id="threshold" min="40" max="90" value="65" step="1">
@@ -218,6 +378,7 @@
         let threshold = 65;
         let lastViolationTime = 0;
         let smoothedVolume = 0;
+        let isMuted = false;
         const VIOLATION_COOLDOWN = 3000; // 3 seconds cooldown between violations
         const SMOOTHING_FACTOR = 0.8; // For smoothing volume readings
 
@@ -231,6 +392,8 @@
         const warningCountDisplay = document.getElementById('warningCount');
         const emoji = document.getElementById('emoji');
         const klaxonSound = document.getElementById('klaxon');
+        const muteToggle = document.getElementById('muteToggle');
+        const muteIcon = document.getElementById('muteIcon');
 
         // Load saved threshold from localStorage
         const savedThreshold = localStorage.getItem('lunkAlarmThreshold');
@@ -240,11 +403,26 @@
             thresholdValue.textContent = threshold + ' dB';
         }
 
+        // Load saved mute preference from localStorage
+        const savedMute = localStorage.getItem('lunkAlarmMuted');
+        if (savedMute === 'true') {
+            isMuted = true;
+            muteToggle.checked = true;
+            muteIcon.textContent = '🔇';
+        }
+
         // Threshold slider handler
         thresholdSlider.addEventListener('input', (e) => {
             threshold = parseInt(e.target.value);
             thresholdValue.textContent = threshold + ' dB';
             localStorage.setItem('lunkAlarmThreshold', threshold);
+        });
+
+        // Mute toggle handler
+        muteToggle.addEventListener('change', (e) => {
+            isMuted = e.target.checked;
+            muteIcon.textContent = isMuted ? '🔇' : '🔊';
+            localStorage.setItem('lunkAlarmMuted', isMuted);
         });
 
         // Start button handler
@@ -397,10 +575,12 @@
         }
 
         function playKlaxon() {
-            klaxonSound.currentTime = 0;
-            klaxonSound.play().catch(err => {
-                console.log('Klaxon sound not available:', err);
-            });
+            if (!isMuted) {
+                klaxonSound.currentTime = 0;
+                klaxonSound.play().catch(err => {
+                    console.log('Klaxon sound not available:', err);
+                });
+            }
         }
 
         function updateWarningDisplay() {
